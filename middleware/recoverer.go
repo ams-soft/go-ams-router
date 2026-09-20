@@ -6,16 +6,15 @@ import (
 	"runtime/debug"
 )
 
-// Recoverer absorve panics ocorridos em handlers ou middlewares
-// subsequentes, loga o valor do panic e o stack trace, e responde
-// 500 Internal Server Error em vez de derrubar a conexão (e, se não
-// houvesse recover em nenhum lugar da cadeia, potencialmente o processo
-// inteiro, dependendo de como o servidor HTTP trata panics não capturados
-// em outras goroutines).
+// Recoverer absorbs panics occurring in subsequent handlers or
+// middlewares, logs the panic value and stack trace, and responds with
+// 500 Internal Server Error instead of dropping the connection (and, if
+// there were no recover anywhere in the chain, potentially the whole
+// process, depending on how the HTTP server handles uncaught panics in
+// other goroutines).
 //
-// Deve ser um dos primeiros middlewares na stack (via Use), para que
-// consiga capturar panics de qualquer middleware ou handler registrado
-// depois dele.
+// Should be one of the first middlewares in the stack (via Use), so it
+// can catch panics from any middleware or handler registered after it.
 func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {

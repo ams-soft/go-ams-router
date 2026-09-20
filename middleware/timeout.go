@@ -6,19 +6,19 @@ import (
 	"time"
 )
 
-// Timeout sinaliza, através de ctx.Done(), que o prazo definido por d foi
-// atingido, para que handlers que fazem chamadas que respeitam context
-// (banco de dados, HTTP client, etc.) possam abortar o trabalho em
-// andamento. Diferente de Recoverer/RequestID/Logger, este middleware usa
-// context.WithTimeout — que aloca — porque é uma operação inerentemente
-// pontual e de baixa frequência comparada ao roteamento em si; não faz
-// parte do hot path de zero-alloc do core do router.
+// Timeout signals, via ctx.Done(), that the deadline defined by d has
+// been reached, so that handlers making context-aware calls (database,
+// HTTP client, etc.) can abort work in progress. Unlike
+// Recoverer/RequestID/Logger, this middleware uses context.WithTimeout —
+// which allocates — because it is an inherently one-off, low-frequency
+// operation compared to the routing itself; it isn't part of the
+// router core's zero-alloc hot path.
 //
-// Importante: Timeout por si só não interrompe um handler que ignora
-// ctx.Done() e continua processando — ele só communica a expiração do
-// prazo. Handlers precisam checar ctx.Err()/ctx.Done() ativamente, ou usar
-// APIs (como database/sql, http.Client) que já respeitam o context
-// internamente.
+// Important: Timeout by itself does not interrupt a handler that
+// ignores ctx.Done() and keeps processing — it only communicates that
+// the deadline has expired. Handlers need to actively check
+// ctx.Err()/ctx.Done(), or use APIs (like database/sql, http.Client)
+// that already respect the context internally.
 func Timeout(d time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -5,8 +5,9 @@ import (
 	"net/http"
 )
 
-// URLParam retorna o parâmetro de URL de um http.Request, ou string vazia
-// se a chave não existir ou não houver Context de roteamento associado.
+// URLParam returns the URL parameter from an http.Request, or an empty
+// string if the key doesn't exist or there is no associated routing
+// Context.
 func URLParam(r *http.Request, key string) string {
 	if rc := RouteContext(r.Context()); rc != nil {
 		return rc.URLParam(key)
@@ -14,9 +15,9 @@ func URLParam(r *http.Request, key string) string {
 	return ""
 }
 
-// URLParamFromCtx retorna o parâmetro de URL a partir de um context.Context
-// de requisição diretamente, útil dentro de middlewares que só têm acesso
-// ao ctx (não ao *http.Request completo).
+// URLParamFromCtx returns the URL parameter directly from a request's
+// context.Context, useful inside middlewares that only have access to
+// ctx (not the full *http.Request).
 func URLParamFromCtx(ctx context.Context, key string) string {
 	if rc := RouteContext(ctx); rc != nil {
 		return rc.URLParam(key)

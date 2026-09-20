@@ -83,11 +83,11 @@ func BenchmarkMount(b *testing.B) {
 	}
 }
 
-// BenchmarkCompoundSegment documenta o custo do único caminho não
-// garantidamente zero-alloc do matching: segmentos com {param} misturado
-// a texto literal usam regexp.FindStringSubmatch, que aloca a slice de
-// submatches. Rotas com {param} sozinho no segmento (o caso comum) não
-// passam por aqui — ver BenchmarkParamRoute.
+// BenchmarkCompoundSegment documents the cost of the one matching path
+// that isn't guaranteed zero-alloc: segments with {param} mixed with
+// literal text use regexp.FindStringSubmatch, which allocates the
+// submatches slice. Routes with a standalone {param} in the segment
+// (the common case) don't go through here — see BenchmarkParamRoute.
 func BenchmarkCompoundSegment(b *testing.B) {
 	r := NewRouter()
 	r.Get("/articles/{month}-{day}-{year}", noopHandler)

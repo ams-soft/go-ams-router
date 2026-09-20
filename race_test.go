@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// TestConcurrentFirstRequestRace força várias goroutines a chamar
-// ServeHTTP simultaneamente na primeiríssima requisição, exatamente o
-// cenário em que a construção preguiçosa de mx.handler poderia expor uma
-// data race (escrita concorrente no mesmo campo sem sincronização).
+// TestConcurrentFirstRequestRace forces multiple goroutines to call
+// ServeHTTP simultaneously on the very first request, exactly the
+// scenario where the lazy construction of mx.handler could expose a
+// data race (concurrent write to the same field without
+// synchronization).
 func TestConcurrentFirstRequestRace(t *testing.T) {
 	r := NewRouter()
 	r.Use(func(next http.Handler) http.Handler { return next })

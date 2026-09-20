@@ -5,50 +5,48 @@ import (
 	"strings"
 )
 
-// nodeType identifica o papel de um node dentro da árvore de roteamento.
+// nodeType identifies the role of a node within the routing tree.
 type nodeType uint8
 
 const (
-	ntStatic   nodeType = iota // segmento literal: /users
-	ntParam                    // segmento nomeado inteiro: /{id}
-	ntCompound                 // segmento com params parciais: /{month}-{day}
-	ntCatchAll                 // wildcard: /* — só é válido como último segmento
+	ntStatic   nodeType = iota // literal segment: /users
+	ntParam                    // whole named segment: /{id}
+	ntCompound                 // segment with partial params: /{month}-{day}
+	ntCatchAll                 // wildcard: /* — only valid as the last segment
 )
 
-// node é um nó da árvore de roteamento. A árvore é organizada por
-// segmento de path (dividido em '/'), com quatro tipos de node — não é
-// um radix tree de bytes como o do chi/httprouter (que comprime prefixos
-// byte a byte). Essa escolha deliberada troca uma fatia de performance de
-// pico por bem menos superfície de bugs: o fan-out por nível tende a ser
-// pequeno na prática, então o scan linear em children é rápido e não
-// aloca. O caminho comum — um único {param} ocupando o segmento inteiro —
-// continua zero-alloc; segmentos compostos (mistura de literal com
-// {param}, ex. "{month}-{day}-{year}") também são zero-alloc, casados por
-// varredura de delimitador (strings.Index) em vez de regexp — ver
-// matchCompound.
+// node is a node of the routing tree. The tree is organized by path
+// segment (split on '/'), with four node types — it is not a byte-level
+// radix tree like chi/httprouter's (which compresses prefixes byte by
+// byte). This deliberate choice trades a slice of peak performance for
+// much less bug surface: fan-out per level tends to be small in
+// practice, so the linear scan over children is fast and allocation
+// free. The common path — a single {param} occupying the whole segment —
+// remains zero-alloc; compound segments (literal mixed with {param},
+// e.g. "{month}-{day}-{year}") are also zero-alloc, matched by delimiter
+// scanning (strings.Index) instead of regexp — see matchCompound.
 type node struct {
 	typ nodeType
-	seg string // static: texto literal; param/catchAll: nome do parâmetro
+	seg string // static: literal text; param/catchAll: parameter name
 
-	children []*node // filhos estáticos
-	compound []*node // filhos com segmento composto (delimitador), testados em ordem de registro
-	param    *node   // no máximo um filho param (segmento inteiro) por node
-	catchAll *node   // no máximo um filho catch-all por node, sempre folha
+	children []*node // static children
+	compound []*node // children with a compound segment (delimiter), tested in registration order
+	param    *node   // at most one param child (whole segment) per node
+	catchAll *node   // at most one catch-all child per node, always a leaf
 
-	// compoundParts só é usado quando typ == ntCompound.
+	// compoundParts is only used when typ == ntCompound.
 	compoundParts []compoundPart
 
 	handlers [numMethods]http.Handler
 
-	pattern      string // pattern completo registrado, usado por RoutePattern()/Routes()
-	isMountPoint bool   // true para os nodes que Mux.Mount() cria — ver Mux.Routes()
+	pattern      string // full registered pattern, used by RoutePattern()/Routes()
+	isMountPoint bool   // true for nodes created by Mux.Mount() — see Mux.Routes()
 }
 
-// insert adiciona um handler para o método mt no pattern informado,
-// criando nodes conforme necessário, e retorna o node final (usado por
-// Mount para marcar isMountPoint). Chamado apenas no registro de rotas
-// (startup), nunca no caminho de uma requisição — por isso não há
-// preocupação de zero-alloc aqui.
+// insert adds a handler for method mt at the given pattern, creating
+// nodes as needed, and returns the final node (used by Mount to mark
+// isMountPoint). Called only during route registration (startup), never
+// on a request's path — so there is no zero-alloc concern here.
 func (n *node) insert(mt methodTyp, pattern string, h http.Handler) *node {
 	if pattern == "" || pattern[0] != '/' {
 		panic("router: routing pattern must begin with '/': " + pattern)
@@ -68,12 +66,12 @@ func (n *node) insert(mt methodTyp, pattern string, h http.Handler) *node {
 	return cur
 }
 
-// child encontra ou cria o filho de cur correspondente a seg, decidindo
-// o tipo de node a partir do formato do segmento:
-//   - "*"                          → catch-all
-//   - "{name}" (segmento inteiro)  → param simples
-//   - contém "{" mas não é só isso → compound, decomposto em literal+param
-//   - qualquer outra coisa         → estático (literal exato)
+// child finds or creates cur's child corresponding to seg, deciding the
+// node type from the segment's shape:
+//   - "*"                             → catch-all
+//   - "{name}" (whole segment)        → simple param
+//   - contains "{" but isn't just that → compound, decomposed into literal+param
+//   - anything else                   → static (exact literal)
 func (cur *node) child(seg, fullPattern string) *node {
 	switch {
 	case seg == "*":
@@ -118,17 +116,18 @@ func (cur *node) child(seg, fullPattern string) *node {
 	}
 }
 
-// compoundPart é um pedaço de um segmento composto — texto literal ou um
-// parâmetro nomeado — na ordem em que aparece no pattern.
+// compoundPart is a piece of a compound segment — literal text or a
+// named parameter — in the order it appears in the pattern.
 type compoundPart struct {
 	isParam bool
-	text    string // literal: texto exato a casar; param: nome do parâmetro
+	text    string // literal: exact text to match; param: parameter name
 }
 
-// parseCompound decompõe um segmento como "{month}-{day}-{year}" em
-// literais e parâmetros alternados, usado só para segmentos com {param}
-// misturado com texto literal — nunca no caso comum de {param} sozinho
-// (esse continua pelo caminho ntParam, sem passar por aqui).
+// parseCompound decomposes a segment like "{month}-{day}-{year}" into
+// alternating literals and parameters, used only for segments with
+// {param} mixed with literal text — never for the common case of a
+// standalone {param} (that one stays on the ntParam path, without going
+// through here).
 func parseCompound(seg, fullPattern string) []compoundPart {
 	var parts []compoundPart
 
@@ -161,15 +160,16 @@ func parseCompound(seg, fullPattern string) []compoundPart {
 	return parts
 }
 
-// matchCompound casa seg contra parts em runtime, sem regexp: cada
-// parâmetro consome o menor prefixo possível até o próximo literal (ou até
-// o fim do segmento, se for o último part) — o mesmo critério de um grupo
-// não-guloso (.+?), calculado com strings.Index em vez de um motor de
-// regex, então fica zero-alloc. Não faz backtracking entre parâmetros: se
-// o literal seguinte aparecer mais de uma vez em seg, usa a primeira
-// ocorrência, que é o caso comum (delimitadores fixos tipo "-" ou ".").
-// Só grava em rctx.params quando o segmento inteiro casa — sem side
-// effects em caso de falha.
+// matchCompound matches seg against parts at runtime, without regexp:
+// each parameter consumes the smallest possible prefix up to the next
+// literal (or to the end of the segment, if it's the last part) — the
+// same criterion as a non-greedy group (.+?), computed with
+// strings.Index instead of a regex engine, so it stays zero-alloc. It
+// does not backtrack between parameters: if the next literal appears
+// more than once in seg, it uses the first occurrence, which is the
+// common case (fixed delimiters like "-" or "."). It only writes to
+// rctx.params when the whole segment matches — no side effects on
+// failure.
 func matchCompound(parts []compoundPart, seg string, rctx *Context) bool {
 	var names, values [maxParams]string
 	n := 0
@@ -187,24 +187,24 @@ func matchCompound(parts []compoundPart, seg string, rctx *Context) bool {
 		var end int
 		switch {
 		case pi+1 >= len(parts):
-			// último part: consome o resto do segmento.
+			// last part: consumes the rest of the segment.
 			if pos >= len(seg) {
 				return false
 			}
 			end = len(seg)
 
 		case !parts[pi+1].isParam:
-			// delimitado pelo literal seguinte.
+			// delimited by the next literal.
 			idx := strings.Index(seg[pos:], parts[pi+1].text)
-			if idx <= 0 { // -1: sem delimitador; 0: param vazio (.+ exige >=1 char)
+			if idx <= 0 { // -1: no delimiter; 0: empty param (.+ requires >=1 char)
 				return false
 			}
 			end = pos + idx
 
 		default:
-			// param seguido de outro param sem literal entre eles: caso
-			// degenerado e não documentado, cada um consome 1 char (o
-			// mínimo que um (.+?) sem constraint capturaria).
+			// param followed by another param with no literal in between:
+			// degenerate, undocumented case — each one consumes 1 char
+			// (the minimum an unconstrained (.+?) would capture).
 			if pos >= len(seg) {
 				return false
 			}
@@ -229,33 +229,33 @@ func matchCompound(parts []compoundPart, seg string, rctx *Context) bool {
 	return true
 }
 
-// find percorre a árvore buscando o node cujo pattern casa com method/path.
-// Os parâmetros encontrados no caminho — inclusive os de segmentos
-// compostos, via matchCompound — são gravados diretamente em rctx.params
-// (array de tamanho fixo, sem slice dinâmico), então o matching inteiro é
-// zero-alloc, não só o caminho estático/param/catch-all.
+// find walks the tree looking for the node whose pattern matches
+// method/path. Parameters found along the way — including those from
+// compound segments, via matchCompound — are written directly into
+// rctx.params (a fixed-size array, no dynamic slice), so the entire
+// match is zero-alloc, not just the static/param/catch-all path.
 //
-// Trailing slash é significativo: "/foo" e "/foo/" só casam com o mesmo
-// handler se ambos os patterns tiverem sido registrados explicitamente
-// (ou se StripSlashes/RedirectSlashes normalizar o path antes do
-// roteamento — ver pacote middleware). Catch-all é a exceção: ele casa
-// tanto com quanto sem barra final, por ser sua natureza capturar "o
-// resto do path", com ou sem conteúdo.
+// Trailing slash is significant: "/foo" and "/foo/" only match the same
+// handler if both patterns were registered explicitly (or if
+// StripSlashes/RedirectSlashes normalizes the path before routing — see
+// the middleware package). Catch-all is the exception: it matches both
+// with and without a trailing slash, since its nature is to capture "the
+// rest of the path", with or without content.
 //
-// Retorno:
-//   - (node, nil)      quando há handler para mt no pattern casado
-//   - (nil, allowed)   quando o pattern casa mas não para o método mt
-//     (allowed lista os métodos que casam — único ponto desta função que
-//     aloca fora do caso de segmento composto, e só no caminho de erro
-//     405, não no caminho feliz)
-//   - (nil, nil)       quando nenhum pattern casa (404)
+// Return values:
+//   - (node, nil)      when there is a handler for mt on the matched pattern
+//   - (nil, allowed)   when the pattern matches but not for method mt
+//     (allowed lists the methods that do match — the only point in this
+//     function that allocates outside the compound-segment case, and
+//     only on the 405 error path, not the happy path)
+//   - (nil, nil)       when no pattern matches (404)
 func (n *node) find(rctx *Context, mt methodTyp, path string) (*node, []string) {
 	if path == "/" {
 		return n.finish(mt)
 	}
 
 	cur := n
-	i := 1 // pula a barra inicial
+	i := 1 // skip the leading slash
 	ln := len(path)
 
 	for i <= ln {
@@ -267,7 +267,7 @@ func (n *node) find(rctx *Context, mt methodTyp, path string) (*node, []string) 
 		trailingEmpty := seg == "" && i == ln
 
 		if seg == "" && !trailingEmpty {
-			// barra dupla no meio do path: tolera e segue.
+			// double slash in the middle of the path: tolerate and continue.
 			i++
 			continue
 		}
@@ -300,10 +300,11 @@ func (n *node) find(rctx *Context, mt methodTyp, path string) (*node, []string) 
 
 		if !matched && cur.catchAll != nil {
 			rctx.params.add("*", path[start:])
-			// path[start-1:] inclui a barra que antecede o segmento —
-			// fatia da mesma string (sem alocar), usada internamente
-			// por Mount. Quando trailingEmpty, start==ln e path[start-1:]
-			// é só "/", que é o RoutePath correto pro sub-router.
+			// path[start-1:] includes the slash preceding the segment —
+			// a slice of the same string (no allocation), used
+			// internally by Mount. When trailingEmpty, start==ln and
+			// path[start-1:] is just "/", which is the correct
+			// RoutePath for the sub-router.
 			rctx.routeRest = path[start-1:]
 			cur = cur.catchAll
 			matched = true
@@ -319,8 +320,8 @@ func (n *node) find(rctx *Context, mt methodTyp, path string) (*node, []string) 
 	return cur.finish(mt)
 }
 
-// finish resolve o handler final de n para o método mt, ou monta a lista
-// de métodos permitidos para uma resposta 405.
+// finish resolves n's final handler for method mt, or builds the list
+// of allowed methods for a 405 response.
 func (n *node) finish(mt methodTyp) (*node, []string) {
 	if n.handlers[mt] != nil {
 		return n, nil
@@ -338,14 +339,15 @@ func (n *node) finish(mt methodTyp) (*node, []string) {
 	return nil, nil
 }
 
-// splitPattern divide um pattern em segmentos. Uma barra final explícita
-// (exceto para o pattern raiz "/") produz um segmento vazio adicional no
-// final, preservando a distinção entre "/foo" e "/foo/" — ver find()
-// para como isso é casado contra o path real da requisição.
+// splitPattern splits a pattern into segments. An explicit trailing
+// slash (except for the root pattern "/") produces an extra empty
+// segment at the end, preserving the distinction between "/foo" and
+// "/foo/" — see find() for how this is matched against the actual
+// request path.
 func splitPattern(pattern string) []string {
 	body := strings.TrimPrefix(pattern, "/")
 	if body == "" {
-		return nil // pattern raiz "/": zero segmentos
+		return nil // root pattern "/": zero segments
 	}
 
 	hasTrailingSlash := strings.HasSuffix(body, "/")
@@ -368,11 +370,11 @@ func splitPattern(pattern string) []string {
 	return segs
 }
 
-// routes coleta recursivamente todas as rotas registradas a partir deste
-// node, para introspecção (Mux.Routes()). Nodes marcados como ponto de
-// mount são pulados aqui — Mux.Routes() os representa separadamente,
-// como Route.SubRoutes, a partir de Mux.mounts. Não é usado no hot path
-// de requisições, então alocar aqui é aceitável.
+// routes recursively collects all routes registered from this node
+// onward, for introspection (Mux.Routes()). Nodes marked as a mount
+// point are skipped here — Mux.Routes() represents them separately, as
+// Route.SubRoutes, from Mux.mounts. Not used on the request hot path, so
+// allocating here is acceptable.
 func (n *node) routes() []Route {
 	if n.isMountPoint {
 		return nil

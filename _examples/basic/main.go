@@ -1,6 +1,6 @@
-// Command basic demonstra o uso essencial do router: rotas estáticas e
-// com parâmetros, middlewares globais e inline, Group e Mount de
-// sub-router.
+// Command basic demonstrates essential router usage: static and
+// parameterized routes, global and inline middlewares, Group, and
+// sub-router Mount.
 package main
 
 import (
@@ -16,9 +16,9 @@ import (
 func main() {
 	r := router.NewRouter()
 
-	// Middlewares globais: aplicados a toda rota registrada depois desta
-	// chamada. Recoverer primeiro, pra capturar panic de qualquer coisa
-	// que rodar depois dele na cadeia.
+	// Global middlewares: applied to every route registered after this
+	// call. Recoverer first, to catch a panic from anything that runs
+	// after it in the chain.
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
@@ -33,7 +33,7 @@ func main() {
 		fmt.Fprintf(w, "user: %s\n", id)
 	})
 
-	// Group: stack de middleware própria, isolada do restante do router.
+	// Group: its own middleware stack, isolated from the rest of the router.
 	r.Group(func(gr router.Router) {
 		gr.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -46,7 +46,7 @@ func main() {
 		})
 	})
 
-	// Route + Mount: sub-router independente, registrado a partir de "/".
+	// Route + Mount: independent sub-router, registered starting from "/".
 	r.Route("/orgs/{orgID}", func(sr router.Router) {
 		sr.Get("/users/{userID}", func(w http.ResponseWriter, req *http.Request) {
 			fmt.Fprintf(w, "org=%s user=%s\n",
@@ -54,7 +54,7 @@ func main() {
 		})
 	})
 
-	// Wildcard: captura o restante do path em URLParam(r, "*").
+	// Wildcard: captures the rest of the path in URLParam(r, "*").
 	r.Get("/files/*", func(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, "file: %s\n", router.URLParam(req, "*"))
 	})

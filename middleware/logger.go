@@ -6,11 +6,12 @@ import (
 	"time"
 )
 
-// Logger loga o início e fim de cada requisição, com método, path, status
-// resultante e tempo de processamento. Usa o logger padrão de log.Default();
-// para logging estruturado (JSON, níveis, etc.), escreva um middleware
-// equivalente usando slog — a interface de middleware (func(http.Handler)
-// http.Handler) é a mesma independente do backend de log escolhido.
+// Logger logs the start and end of each request, with method, path,
+// resulting status, and processing time. It uses the default logger
+// from log.Default(); for structured logging (JSON, levels, etc.), write
+// an equivalent middleware using slog — the middleware interface
+// (func(http.Handler) http.Handler) is the same regardless of the
+// chosen logging backend.
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

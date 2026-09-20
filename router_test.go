@@ -156,12 +156,11 @@ func TestUseMiddlewareOrder(t *testing.T) {
 }
 
 func TestUseOnRootAllowedAfterRoutesBeforeServing(t *testing.T) {
-	// No Mux raiz, o middleware de Use() envolve o roteamento inteiro,
-	// aplicado uma única vez no primeiro ServeHTTP — não é compilado por
-	// rota no momento do registro. Por isso, ao contrário de um Mux
-	// inline (With/Group), chamar Use() depois de já ter registrado
-	// rotas é permitido, desde que ainda não tenha servido nenhuma
-	// requisição.
+	// On the root Mux, Use()'s middleware wraps the entire routing
+	// process, applied once on the first ServeHTTP — it isn't compiled
+	// per route at registration time. So, unlike an inline Mux
+	// (With/Group), calling Use() after routes have already been
+	// registered is allowed, as long as no request has been served yet.
 	r := NewRouter()
 	r.Get("/x", func(w http.ResponseWriter, r *http.Request) {})
 
@@ -182,11 +181,11 @@ func TestUseOnRootAllowedAfterRoutesBeforeServing(t *testing.T) {
 func TestUseOnRootPanicsAfterServing(t *testing.T) {
 	r := NewRouter()
 	r.Get("/x", func(w http.ResponseWriter, r *http.Request) {})
-	doReq(t, r, http.MethodGet, "/x") // primeira requisição: congela mx.handler
+	doReq(t, r, http.MethodGet, "/x") // first request: freezes mx.handler
 
 	defer func() {
 		if recover() == nil {
-			t.Fatal("esperava panic ao chamar Use() no Mux raiz depois de já ter servido uma requisição")
+			t.Fatal("expected panic when calling Use() on the root Mux after it has already served a request")
 		}
 	}()
 	r.Use(func(next http.Handler) http.Handler { return next })
@@ -199,7 +198,7 @@ func TestUseOnInlineAfterRoutePanics(t *testing.T) {
 
 	defer func() {
 		if recover() == nil {
-			t.Fatal("esperava panic ao chamar Use() num Router inline depois de registrar uma rota nele")
+			t.Fatal("expected panic when calling Use() on an inline Router after registering a route on it")
 		}
 	}()
 	inline.Use(func(next http.Handler) http.Handler { return next })
@@ -315,11 +314,11 @@ func TestGroupIsolatesMiddleware(t *testing.T) {
 	ran = false
 	doReq(t, r, http.MethodGet, "/grouped")
 	if !ran {
-		t.Fatal("middleware do Group não rodou para rota dentro do grupo")
+		t.Fatal("Group middleware did not run for a route inside the group")
 	}
 }
 
-// --- Limitação 1: segmentos compostos (regex por segmento) ---
+// --- Limitation 1: compound segments (per-segment regex) ---
 
 func TestCompoundSegment(t *testing.T) {
 	r := NewRouter()
@@ -337,17 +336,17 @@ func TestCompoundSegmentNoMatch(t *testing.T) {
 	r := NewRouter()
 	r.Get("/articles/{month}-{day}-{year}", func(w http.ResponseWriter, r *http.Request) {})
 
-	// Sem nenhum hífen, não há como casar as três partes do padrão.
+	// With no hyphen at all, there's no way to match the pattern's three parts.
 	rec := doReq(t, r, http.MethodGet, "/articles/nodate")
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404 (segmento sem separadores não deveria casar o padrão composto)", rec.Code)
+		t.Fatalf("status = %d, want 404 (a segment without separators should not match the compound pattern)", rec.Code)
 	}
 }
 
 func TestCompoundCoexistsWithFullSegmentParam(t *testing.T) {
-	// Um {id} sozinho no segmento continua usando o caminho rápido
-	// (ntParam, sem regex) mesmo numa árvore que também tem nodes
-	// compostos em outros ramos.
+	// A standalone {id} in the segment still uses the fast path (ntParam,
+	// no regex) even in a tree that also has compound nodes on other
+	// branches.
 	r := NewRouter()
 	r.Get("/articles/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("id:" + URLParam(r, "id")))
@@ -367,7 +366,7 @@ func TestCompoundCoexistsWithFullSegmentParam(t *testing.T) {
 	}
 }
 
-// --- Limitação 2: trailing slash estrito por padrão ---
+// --- Limitation 2: strict trailing slash by default ---
 
 func TestTrailingSlashIsStrictByDefault(t *testing.T) {
 	r := NewRouter()
@@ -382,7 +381,7 @@ func TestTrailingSlashIsStrictByDefault(t *testing.T) {
 
 	rec2 := doReq(t, r, http.MethodGet, "/user/jsmith/")
 	if rec2.Code != http.StatusNotFound {
-		t.Fatalf("GET /user/jsmith/: status=%d, want 404 (trailing slash não registrado explicitamente)", rec2.Code)
+		t.Fatalf("GET /user/jsmith/: status=%d, want 404 (trailing slash not explicitly registered)", rec2.Code)
 	}
 }
 
@@ -412,14 +411,14 @@ func TestCatchAllMatchesWithOrWithoutTrailingSlash(t *testing.T) {
 		t.Fatalf("body = %q, want %q", got, "file:a/b")
 	}
 
-	// catch-all é a exceção documentada: casa também com barra final.
+	// catch-all is the documented exception: it also matches with a trailing slash.
 	rec2 := doReq(t, r, http.MethodGet, "/files/a/b/")
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("GET /files/a/b/: status=%d, want 200 (catch-all deveria casar com barra final)", rec2.Code)
 	}
 }
 
-// --- Limitação 4: Routes() refletindo Mount como SubRoutes ---
+// --- Limitation 4: Routes() reflecting Mount as SubRoutes ---
 
 func TestRoutesReflectsMountAsSubRoutes(t *testing.T) {
 	admin := NewRouter()
@@ -436,10 +435,10 @@ func TestRoutesReflectsMountAsSubRoutes(t *testing.T) {
 		}
 	}
 	if mountRoute == nil {
-		t.Fatal("esperava uma Route com Pattern \"/admin\" na saída de Routes()")
+		t.Fatal("expected a Route with Pattern \"/admin\" in the Routes() output")
 	}
 	if mountRoute.SubRoutes == nil {
-		t.Fatal("esperava SubRoutes preenchido para o mount de /admin")
+		t.Fatal("expected SubRoutes to be populated for the /admin mount")
 	}
 	subRoutes := mountRoute.SubRoutes.Routes()
 	if len(subRoutes) != 1 || subRoutes[0].Pattern != "/accounts" {

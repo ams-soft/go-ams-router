@@ -2,12 +2,12 @@ package middleware
 
 import "net/http"
 
-// statusWriter envolve um http.ResponseWriter para capturar o status code
-// e o número de bytes escritos, informação que a interface padrão não
-// expõe. WriteHeader só é considerado "chamado explicitamente" na
-// primeira invocação — chamadas subsequentes (comportamento indevido de
-// um handler, mas que a stdlib tolera) não sobrescrevem o status já
-// capturado, espelhando o comportamento real do http.ResponseWriter.
+// statusWriter wraps an http.ResponseWriter to capture the status code
+// and the number of bytes written, information the standard interface
+// doesn't expose. WriteHeader is only considered "explicitly called" on
+// the first invocation — subsequent calls (improper handler behavior,
+// but one the stdlib tolerates) don't overwrite the already-captured
+// status, mirroring http.ResponseWriter's actual behavior.
 type statusWriter struct {
 	http.ResponseWriter
 	status      int
@@ -36,10 +36,10 @@ func (sw *statusWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// Unwrap permite que http.ResponseController (Go 1.20+) e checagens via
-// errors.As/http.NewResponseController enxerguem o ResponseWriter
-// original por baixo do wrapper — necessário para handlers que dependem
-// de recursos como Flush, Hijack ou SetReadDeadline.
+// Unwrap allows http.ResponseController (Go 1.20+) and checks via
+// errors.As/http.NewResponseController to see the original
+// ResponseWriter beneath the wrapper — needed for handlers that depend
+// on features like Flush, Hijack, or SetReadDeadline.
 func (sw *statusWriter) Unwrap() http.ResponseWriter {
 	return sw.ResponseWriter
 }

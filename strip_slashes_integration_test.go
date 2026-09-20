@@ -46,9 +46,10 @@ func TestRedirectSlashesRedirects(t *testing.T) {
 }
 
 func TestInlineMiddlewareCannotStripSlashes(t *testing.T) {
-	// Documenta explicitamente a limitação: StripSlashes registrado via
-	// With()/Group() (não no Mux raiz) não afeta o roteamento, porque
-	// nesse caso o middleware só roda DEPOIS que a rota já casou.
+	// Explicitly documents the limitation: StripSlashes registered via
+	// With()/Group() (not on the root Mux) doesn't affect routing,
+	// because in that case the middleware only runs AFTER the route has
+	// already matched.
 	r := router.NewRouter()
 	r.With(middleware.StripSlashes).Get("/user/{name}", func(w http.ResponseWriter, req *http.Request) {})
 
@@ -57,6 +58,6 @@ func TestInlineMiddlewareCannotStripSlashes(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404 (StripSlashes inline não deveria afetar o roteamento — use no Mux raiz)", rec.Code)
+		t.Fatalf("status = %d, want 404 (inline StripSlashes should not affect routing — use it on the root Mux)", rec.Code)
 	}
 }

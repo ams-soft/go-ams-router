@@ -9,15 +9,16 @@ import (
 
 type requestIDKey struct{}
 
-// RequestIDHeader é o header usado para propagar o request ID, tanto na
-// leitura (se o cliente/proxy já enviou um) quanto na escrita da resposta.
+// RequestIDHeader is the header used to propagate the request ID, both
+// when reading (if the client/proxy already sent one) and when writing
+// the response.
 const RequestIDHeader = "X-Request-Id"
 
-// RequestID injeta um identificador único por requisição no contexto e no
-// header de resposta. Se o header já vier preenchido na requisição (ex.:
-// definido por um proxy/load balancer upstream), esse valor é preservado
-// em vez de gerar um novo — permitindo rastrear a requisição de ponta a
-// ponta através de múltiplos serviços.
+// RequestID injects a unique per-request identifier into the context and
+// into the response header. If the header is already set on the request
+// (e.g. set by an upstream proxy/load balancer), that value is preserved
+// instead of generating a new one — allowing the request to be traced
+// end-to-end across multiple services.
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get(RequestIDHeader)
@@ -30,22 +31,23 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
-// GetRequestID retorna o request ID associado ao contexto, ou string
-// vazia se nenhum tiver sido definido (ex.: middleware RequestID não está
-// na stack).
+// GetRequestID returns the request ID associated with the context, or an
+// empty string if none has been set (e.g. the RequestID middleware isn't
+// in the stack).
 func GetRequestID(ctx context.Context) string {
 	id, _ := ctx.Value(requestIDKey{}).(string)
 	return id
 }
 
-// newRequestID gera um identificador aleatório de 16 bytes, em hex (32
-// caracteres). Usa apenas crypto/rand da stdlib — sem dependência de
-// pacote de UUID externo.
+// newRequestID generates a random 16-byte identifier, in hex (32
+// characters). Uses only crypto/rand from the stdlib — no dependency on
+// an external UUID package.
 func newRequestID() string {
 	var b [16]byte
-	// Erro de crypto/rand.Read é praticamente impossível em condições
-	// normais (fonte de entropia do SO indisponível); nesse caso raríssimo,
-	// preferimos seguir com zeros a derrubar a requisição.
+	// An error from crypto/rand.Read is practically impossible under
+	// normal conditions (OS entropy source unavailable); in this
+	// extremely rare case, we prefer to proceed with zeros rather than
+	// drop the request.
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
 }

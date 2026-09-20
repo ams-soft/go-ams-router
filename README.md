@@ -1,33 +1,32 @@
-# go-router
+# AMS Router
 
-Um router HTTP leve, idiomático e composável para construir serviços em Go —
-alternativa ao [chi](https://github.com/go-chi/chi), com foco em **zero
-allocations no hot path** sem abrir mão da compatibilidade total com
-`net/http`.
+A lightweight, idiomatic, composable HTTP router for building services in
+Go — an alternative to [chi](https://github.com/go-chi/chi), focused on
+**zero allocations on the hot path** without giving up full compatibility
+with `net/http`.
 
-- ⚡️ **Fast** — árvore de roteamento em trie por segmento + dispatch de
-  método via array fixo, sem `map[string]http.Handler` no caminho da
-  requisição.
-- 🔥 **Robust** — 32 testes (incluindo `-race`), cobrindo rotas estáticas,
-  parâmetros, segmentos compostos, catch-all, trailing slash estrito,
-  `Mount`/`Route` aninhados e ordenação de middleware.
-- 📼 **Zero dependências externas** — só stdlib.
-- 🚀 **Lightweight** — núcleo pequeno, uma responsabilidade por arquivo.
-- 🧊 **1 alloc/op** em todo caminho de roteamento — estático, param,
-  múltiplos params, segmento composto, middleware encadeado e `Mount`
-  aninhado. É o piso teórico para qualquer router 100% compatível com
-  `http.Handler` sem recorrer a `unsafe` (ver
-  [Arquitetura](#arquitetura--decisões-de-design)).
+- ⚡️ **Fast** — per-segment trie routing tree + method dispatch via a fixed
+  array, with no `map[string]http.Handler` on the request path.
+- 🔥 **Robust** — 32 tests (including `-race`), covering static routes,
+  parameters, compound segments, catch-all, strict trailing slash,
+  nested `Mount`/`Route`, and middleware ordering.
+- 📼 **Zero external dependencies** — stdlib only.
+- 🚀 **Lightweight** — small core, one responsibility per file.
+- 🧊 **1 alloc/op** across the entire routing path — static, param,
+  multiple params, compound segment, chained middleware, and nested
+  `Mount`. This is the theoretical floor for any router that is 100%
+  compatible with `http.Handler` without resorting to `unsafe` (see
+  [Architecture](#architecture--design-decisions)).
 
-## Instalação
+## Installation
 
 ```
 go get github.com/ams-soft/go-ams-router
 ```
 
-Requer Go 1.27+ (ver [Por que Go 1.27](#por-que-go-127)).
+Requires Go 1.27+ (see [Why Go 1.27](#why-go-127)).
 
-## Uso rápido
+## Quick usage
 
 ```go
 package main
@@ -57,79 +56,81 @@ func main() {
 }
 ```
 
-Veja `_examples/basic/main.go` para um exemplo mais completo, incluindo
-`Group`, `Route`+`Mount` e wildcard.
+See `_examples/basic/main.go` for a more complete example, including
+`Group`, `Route`+`Mount`, and wildcards.
 
 ## API
 
-A interface `Router` cobre o mesmo conjunto de operações do chi:
+The `Router` interface covers the same set of operations as chi:
 `Use`, `With`, `Group`, `Route`, `Mount`, `Handle`/`HandleFunc`,
-`Method`/`MethodFunc`, um método por verbo HTTP padrão (`Get`, `Post`,
+`Method`/`MethodFunc`, one method per standard HTTP verb (`Get`, `Post`,
 `Put`, `Patch`, `Delete`, `Head`, `Options`, `Connect`, `Trace`),
-`NotFound` e `MethodNotAllowed`. `URLParam(r, key)` e
-`URLParamFromCtx(ctx, key)` lêem parâmetros de rota; `URLParam(r, "*")` lê
-o valor capturado por um catch-all (`/files/*`).
+`NotFound`, and `MethodNotAllowed`. `URLParam(r, key)` and
+`URLParamFromCtx(ctx, key)` read route parameters; `URLParam(r, "*")`
+reads the value captured by a catch-all (`/files/*`).
 
-O subpacote `middleware` (mesmo módulo — ver
-[Estrutura do repositório](#estrutura-do-repositório)) traz `Logger`,
-`Recoverer`, `RequestID`, `Timeout`, `StripSlashes` e `RedirectSlashes`.
+The `middleware` subpackage (same module — see
+[Repository structure](#repository-structure)) provides `Logger`,
+`Recoverer`, `RequestID`, `Timeout`, `StripSlashes`, and
+`RedirectSlashes`.
 
-## Trailing slash é estrito por padrão
+## Trailing slash is strict by default
 
-`/user/{name}` e `/user/{name}/` são rotas **diferentes** — cada uma
-precisa ser registrada explicitamente para responder. Isso é intencional
-(evita ambiguidade silenciosa sobre qual variante o cliente pretendia) e
-é o mesmo comportamento padrão do chi.
+`/user/{name}` and `/user/{name}/` are **different** routes — each one
+must be registered explicitly to respond. This is intentional (it avoids
+silent ambiguity about which variant the client intended) and matches
+chi's default behavior.
 
-Catch-all é a exceção deliberada: `/files/*` casa tanto `/files/a/b`
-quanto `/files/a/b/`, porque a natureza de um wildcard é capturar "o
-resto do path", com ou sem conteúdo depois da barra.
+Catch-all is the deliberate exception: `/files/*` matches both
+`/files/a/b` and `/files/a/b/`, because the nature of a wildcard is to
+capture "the rest of the path", with or without content after the
+trailing slash.
 
-Quem preferir tolerância (tratar `/foo` e `/foo/` como a mesma rota) usa
-um dos dois middlewares, registrados com `Use()` **no Mux raiz**
-(precisam rodar antes do roteamento decidir qual rota casa — ver
-[Arquitetura](#arquitetura--decisões-de-design)):
+Anyone who prefers tolerance (treating `/foo` and `/foo/` as the same
+route) can use one of two middlewares, registered with `Use()` **on the
+root Mux** (they need to run before routing decides which route
+matches — see [Architecture](#architecture--design-decisions)):
 
 ```go
 r := router.NewRouter()
-r.Use(middleware.StripSlashes)   // normaliza silenciosamente
-// ou:
-r.Use(middleware.RedirectSlashes) // responde 301 removendo a barra final
+r.Use(middleware.StripSlashes)   // silently normalizes
+// or:
+r.Use(middleware.RedirectSlashes) // responds 301 removing the trailing slash
 ```
 
-## Segmentos compostos (múltiplos params em um segmento)
+## Compound segments (multiple params in one segment)
 
-Além do caso comum — `{id}` ocupando o segmento inteiro — patterns com
-`{param}` misturado a texto literal no mesmo segmento também são
-suportados:
+Beyond the common case — `{id}` occupying the entire segment — patterns
+with `{param}` mixed with literal text in the same segment are also
+supported:
 
 ```go
 r.Get("/articles/{month}-{day}-{year}", handler)
 // GET /articles/01-16-2017 → month=01, day=16, year=2017
 ```
 
-O pattern é decomposto em literal+param uma vez no registro da rota; em
-runtime, cada param é casado por `strings.Index` contra o próximo literal
-(sem `regexp`), então segmento composto é tão zero-alloc quanto `{id}`
-sozinho (ver benchmarks abaixo).
+The pattern is decomposed into literal+param once, at route registration
+time; at runtime, each param is matched via `strings.Index` against the
+next literal (no `regexp`), so a compound segment is just as zero-alloc
+as `{id}` alone (see benchmarks below).
 
-## Arquitetura & decisões de design
+## Architecture & design decisions
 
-### O piso teórico de allocations com `http.Handler`
+### The theoretical allocation floor with `http.Handler`
 
-Qualquer router que mantenha a assinatura padrão `func(w
-http.ResponseWriter, r *http.Request)` — em vez de uma assinatura própria
-como `func(w, r, params)` — precisa anexar os parâmetros de rota através
-de `r.WithContext(ctx)`, porque não há outro lugar padrão para colocá-los.
-`Request.WithContext` sempre aloca um `*Request` novo
-(`r2 := new(Request)`). Esse é o piso: **1 alloc/op**, incontornável sem
-recorrer a `unsafe` para escrever no campo não-exportado `Request.ctx`
-diretamente (deliberadamente descartado neste projeto — o ganho não
-compensa o risco de quebrar em cada mudança de versão do Go).
+Any router that keeps the standard `func(w http.ResponseWriter, r
+*http.Request)` signature — instead of a custom signature like `func(w,
+r, params)` — needs to attach route parameters via `r.WithContext(ctx)`,
+because there is no other standard place to put them.
+`Request.WithContext` always allocates a new `*Request`
+(`r2 := new(Request)`). That's the floor: **1 alloc/op**, unavoidable
+without resorting to `unsafe` to write directly to the unexported
+`Request.ctx` field (deliberately ruled out in this project — the gain
+doesn't offset the risk of breaking with every Go version change).
 
-Os benchmarks abaixo confirmam que o router bate esse piso de forma
-consistente, mesmo em rotas com múltiplos parâmetros, middleware
-encadeado, `Mount` aninhado e sob `-race`:
+The benchmarks below confirm the router consistently hits this floor,
+even on routes with multiple parameters, chained middleware, nested
+`Mount`, and under `-race`:
 
 ```
 $ go test -race ./...
@@ -145,92 +146,94 @@ BenchmarkMount              356.9 ns/op   320 B/op   1 allocs/op
 BenchmarkCompoundSegment    323.6 ns/op   320 B/op   1 allocs/op
 ```
 
-(máquina de referência: Intel i9-12900HX, Go 1.27.1, linux/amd64 — os
-números absolutos variam por hardware, o que importa é o **1 allocs/op**
-constante em todo caminho, inclusive segmento composto (`{month}-{day}-{year}`),
-casado por varredura de delimitador em vez de regexp — ver `matchCompound`
-em `tree.go`. Reproduza com os comandos acima.)
+(reference machine: Intel i9-12900HX, Go 1.27.1, linux/amd64 — absolute
+numbers vary by hardware; what matters is the constant **1 allocs/op**
+across every path, including the compound segment
+(`{month}-{day}-{year}`), matched by delimiter scanning instead of
+regexp — see `matchCompound` in `tree.go`. Reproduce with the commands
+above.)
 
-Como isso é alcançado:
+How this is achieved:
 
-1. **`Context` implementa `context.Context` manualmente** (`Deadline`,
-   `Done`, `Err`, `Value`) em vez de usar `context.WithValue` — que
-   alocaria um `*valueCtx` adicional por cima do `WithContext`. `Context`
-   é reciclado via `sync.Pool` entre requisições.
-2. **Parâmetros em array fixo** (`[8]string` para chaves e valores), não
-   slice dinâmico — sem alocação de slice por requisição enquanto o
-   número de params ficar dentro do limite (`maxParams`, hoje 8).
-3. **Dispatch de método por array** (`[9]http.Handler` por node),
-   resolvido por `switch` sobre a string do método — sem hashing de map.
-4. **Middleware compilado no registro da rota, não por requisição.** Há
-   duas camadas: o middleware do Mux raiz (via `Use()`) envolve o
-   roteamento inteiro — composto uma única vez via `sync.Once`, na
-   primeira requisição, e roda ANTES do match na árvore (é o que permite
-   `StripSlashes` alterar o path antes do roteamento decidir a rota); o
-   middleware inline (via `With()`/`Group()`) é compilado diretamente no
-   handler de cada rota, no momento do registro. Nenhuma composição de
-   closures acontece por requisição em nenhum dos dois casos, e nenhum
-   dos dois é executado em duplicidade (o inline nunca inclui uma cópia
-   do que a raiz já cobre).
-5. **Mount sem concatenação de string**: o restante do path depois do
-   ponto de montagem é obtido via *slice* da string original
-   (`path[start-1:]`), não via concatenação (`"/" + valor`) — slicing de
-   string em Go não aloca porque compartilha o array de bytes
-   subjacente; concatenação sim.
+1. **`Context` implements `context.Context` manually** (`Deadline`,
+   `Done`, `Err`, `Value`) instead of using `context.WithValue` — which
+   would allocate an additional `*valueCtx` on top of `WithContext`.
+   `Context` is recycled via `sync.Pool` between requests.
+2. **Parameters in a fixed array** (`[8]string` for keys and values),
+   not a dynamic slice — no slice allocation per request as long as the
+   number of params stays within the limit (`maxParams`, currently 8).
+3. **Method dispatch via array** (`[9]http.Handler` per node), resolved
+   by a `switch` on the method string — no map hashing.
+4. **Middleware compiled at route registration, not per request.**
+   There are two layers: the root Mux middleware (via `Use()`) wraps the
+   entire routing process — composed once via `sync.Once`, on the first
+   request, and runs BEFORE the tree match (this is what allows
+   `StripSlashes` to alter the path before routing decides the route);
+   inline middleware (via `With()`/`Group()`) is compiled directly into
+   each route's handler at registration time. No closure composition
+   happens per request in either case, and neither is executed twice
+   over (the inline layer never includes a copy of what the root layer
+   already covers).
+5. **Mount without string concatenation**: the remainder of the path
+   after the mount point is obtained via a *slice* of the original
+   string (`path[start-1:]`), not via concatenation (`"/" + value`) —
+   string slicing in Go doesn't allocate because it shares the
+   underlying byte array; concatenation does.
 
-### Árvore de roteamento: trie por segmento, não radix tree de bytes
+### Routing tree: per-segment trie, not a byte radix tree
 
-A árvore é organizada por **segmento de path** (dividido em `/`), com
-quatro tipos de node — estático, parâmetro nomeado (`{id}`), composto
-(`{a}-{b}`, decomposto em literal+param, sem regexp) e catch-all (`*`) —
-em vez de um radix tree de
-bytes como o do chi/httprouter (que comprime prefixos byte a byte). Essa
-escolha deliberada troca uma fatia de performance de pico por muito menos
-superfície de bugs: o fan-out por nível tende a ser pequeno na prática
-(poucos recursos irmãos sob um mesmo prefixo), então o scan linear em
-`children` é rápido e não aloca.
+The tree is organized by **path segment** (split on `/`), with four node
+types — static, named parameter (`{id}`), compound (`{a}-{b}`,
+decomposed into literal+param, no regexp), and catch-all (`*`) — instead
+of a byte-level radix tree like chi/httprouter's (which compresses
+prefixes byte by byte). This deliberate choice trades a slice of
+peak performance for much less bug surface: fan-out per level tends to
+be small in practice (few sibling resources under the same prefix), so
+the linear scan over `children` is fast and allocation-free.
 
-**Limitação conhecida, documentada para quem for estender o projeto:**
-apenas os 9 métodos HTTP padrão são suportados (ver `method.go`) — sem
-um mecanismo de registro de métodos customizados (ex.: `PURGE`, `LOCK`).
-Quem precisar disso pode adicionar um node tipo "catch-all de método" ou
-um fallback baseado em `map[string]http.Handler` por node, isolado do
-array fixo dos 9 padrão para não pagar custo extra em quem não usa.
+**Known limitation, documented for anyone extending the project:** only
+the 9 standard HTTP methods are supported (see `method.go`) — there is
+no mechanism for registering custom methods (e.g. `PURGE`, `LOCK`).
+Anyone who needs this can add a "method catch-all" node type or a
+`map[string]http.Handler` fallback per node, isolated from the fixed
+array of the 9 standard methods so as not to impose extra cost on those
+who don't use it.
 
-### Por que não FFI/Rust
+### Why not FFI/Rust
 
-Foi cogitado e descartado: o overhead de uma chamada `cgo` (100-200ns,
-troca de stack, impossibilidade de preempção normal do goroutine) é maior
-que o tempo total do matching de path que se pretendia acelerar, e
-quebraria zero-dependências, cross-compilation trivial (`GOOS`/`GOARCH`
-sem toolchain extra) e o modelo de concorrência do Go sob carga alta.
+This was considered and dropped: the overhead of a `cgo` call
+(100-200ns, stack switch, inability to use normal goroutine preemption)
+is greater than the total path-matching time it would aim to speed up,
+and it would break zero-dependencies, trivial cross-compilation
+(`GOOS`/`GOARCH` with no extra toolchain), and Go's concurrency model
+under high load.
 
-## Estrutura do repositório
+## Repository structure
 
-Single-module: um `go.mod` só, na raiz, cobrindo o core e o subpacote
-`middleware`. Essa escolha foi deliberada para a fase atual do projeto —
-o acoplamento entre mudanças no core e nos middlewares essenciais durante
-o desenvolvimento é alto o suficiente para que versionamento conjunto
-seja mais simples e seguro do que multi-module (múltiplos `go.mod`
-via `go.work`). Extrair `middleware/` (ou outros pacotes satélite futuros
-como `render`/`docgen`, no espírito do que o chi faz como repos
-separados) para um módulo próprio é uma migração viável mais adiante, não
-uma decisão definitiva.
+Single module: one `go.mod` at the root, covering the core and the
+`middleware` subpackage. This choice was deliberate for the project's
+current phase — the coupling between changes to the core and to the
+essential middlewares during development is high enough that versioning
+them together is simpler and safer than a multi-module setup (multiple
+`go.mod` files via `go.work`). Extracting `middleware/` (or other future
+satellite packages, such as `render`/`docgen`, in the spirit of what chi
+does with separate repos) into its own module is a viable migration down
+the road, not a definitive decision.
 
 ```
 go-router/
 ├── go.mod
 ├── LICENSE
-├── router.go                        // interfaces Router, Routes, Route, Middlewares, Walk
-├── context.go                       // Context (implementa context.Context), pool, routeParams
-├── params.go                        // URLParam / URLParamFromCtx (nível de pacote)
-├── method.go                        // dispatch de método via array (9 métodos padrão)
-├── tree.go                          // árvore de roteamento (trie por segmento + compound sem regex)
-├── mux.go                           // Mux: implementação concreta de Router + ServeHTTP
-├── router_test.go                   // testes de correção
+├── router.go                        // Router, Routes, Route, Middlewares, Walk interfaces
+├── context.go                       // Context (implements context.Context), pool, routeParams
+├── params.go                        // URLParam / URLParamFromCtx (package-level)
+├── method.go                        // method dispatch via array (9 standard methods)
+├── tree.go                          // routing tree (per-segment trie + compound without regex)
+├── mux.go                           // Mux: concrete Router implementation + ServeHTTP
+├── router_test.go                   // correctness tests
 ├── router_bench_test.go             // benchmarks (allocs/op)
-├── race_test.go                     // teste de concorrência na primeira requisição (-race)
-├── strip_slashes_integration_test.go // StripSlashes/RedirectSlashes + roteamento estrito
+├── race_test.go                     // concurrency test on the first request (-race)
+├── strip_slashes_integration_test.go // StripSlashes/RedirectSlashes + strict routing
 ├── middleware/
 │   ├── doc.go
 │   ├── logger.go
@@ -241,40 +244,41 @@ go-router/
 │   ├── timeout.go
 │   └── middleware_test.go
 └── _examples/
-    └── basic/main.go                // prefixo "_" — ignorado por go build/test ./...
+    └── basic/main.go                // "_" prefix — ignored by go build/test ./...
 ```
 
-## Por que Go 1.27
+## Why Go 1.27
 
-- **Alocação de memória "size-specialized"**: o compilador gera chamadas
-  para rotinas de alocação especializadas por tamanho, reduzindo o custo
-  de alocações pequenas (<80 bytes) em até 30% — o perfil exato do
-  `*Context` e do `*http.Request` que este router aloca por requisição.
-- **Métodos genéricos**: permitem, no futuro, uma camada opcional
-  tipada por cima do core (ex.: binding automático de params para
-  struct) sem contaminar a assinatura `http.Handler` do core.
-- **Pacote `uuid` na stdlib**: possibilita adicionar um matcher de tipo
-  `{id:uuid}` no futuro sem quebrar o requisito de zero dependências
-  externas.
+- **"Size-specialized" memory allocation**: the compiler generates calls
+  to size-specialized allocation routines, reducing the cost of small
+  allocations (<80 bytes) by up to 30% — exactly the profile of the
+  `*Context` and `*http.Request` this router allocates per request.
+- **Generic methods**: enable, in the future, an optional typed layer on
+  top of the core (e.g. automatic param binding to a struct) without
+  polluting the core's `http.Handler` signature.
+- **`uuid` package in stdlib**: makes it possible to add an `{id:uuid}`
+  type matcher in the future without breaking the zero external
+  dependencies requirement.
 
-## Rodando os testes
+## Running the tests
 
 ```
-go test ./...                       # correção
-go test -race ./...                 # concorrência
+go test ./...                       # correctness
+go test -race ./...                 # concurrency
 go test -run=^$ -bench=. -benchmem ./...  # performance (allocs/op)
 go vet ./...
 ```
 
-## Roadmap / extensões possíveis
+## Roadmap / possible extensions
 
-- [ ] Matcher de tipo (`{id:int}`, `{id:uuid}`) usando o pacote `uuid` da
-      stdlib do Go 1.27
-- [ ] Camada opcional de generics por cima do core (métodos genéricos,
-      Go 1.27+) para binding tipado de params
-- [ ] Suporte a métodos HTTP customizados (`PURGE`, `LOCK`, etc.), via
-      map lazy por node, isolado do array fixo dos 9 métodos padrão
+- [ ] Type matcher (`{id:int}`, `{id:uuid}`) using Go 1.27's stdlib
+      `uuid` package
+- [ ] Optional generics layer on top of the core (generic methods,
+      Go 1.27+) for typed param binding
+- [ ] Support for custom HTTP methods (`PURGE`, `LOCK`, etc.), via a
+      lazy map per node, isolated from the fixed array of the 9 standard
+      methods
 
-## Licença
+## License
 
-MIT — ver [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

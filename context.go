@@ -6,23 +6,23 @@ import (
 	"time"
 )
 
-// maxParams é o número máximo de parâmetros de rota suportados sem
-// realocar. Cobre o caso comum (ex: /orgs/{orgID}/users/{userID}/posts/{postID})
-// com folga; rotas com mais params que isso ainda funcionam, apenas
-// realocando o backing array.
+// maxParams is the maximum number of route parameters supported without
+// reallocating. It comfortably covers the common case (e.g.
+// /orgs/{orgID}/users/{userID}/posts/{postID}); routes with more params
+// than this still work, they just reallocate the backing array.
 const maxParams = 8
 
-// contextKey é um tipo não exportado para a chave de contexto do router,
-// evitando colisão com chaves de outros pacotes.
+// contextKey is an unexported type for the router's context key,
+// avoiding collisions with keys from other packages.
 type contextKey struct{ name string }
 
-// RouteCtxKey é a chave usada para armazenar o *Context de roteamento
-// dentro de um context.Context padrão.
+// RouteCtxKey is the key used to store the routing *Context inside a
+// standard context.Context.
 var RouteCtxKey = &contextKey{"RouteContext"}
 
-// routeParams rastreia parâmetros de URL usando arrays de tamanho fixo em
-// vez de slices dinâmicos, evitando alocação de slice por requisição
-// enquanto o número de params estiver dentro de maxParams.
+// routeParams tracks URL parameters using fixed-size arrays instead of
+// dynamic slices, avoiding a slice allocation per request as long as the
+// number of params stays within maxParams.
 type routeParams struct {
 	keys   [maxParams]string
 	values [maxParams]string
@@ -36,17 +36,17 @@ func (p *routeParams) add(key, value string) {
 		p.n++
 		return
 	}
-	// Caso raro (mais de maxParams): não deve ocorrer em uso normal.
-	// Ignorar silenciosamente manteria o zero-alloc; preferimos não
-	// suportar esse caso por ora e revisitar se necessário.
+	// Rare case (more than maxParams): shouldn't happen in normal use.
+	// Silently ignoring would keep zero-alloc; we prefer not to support
+	// this case for now and revisit if needed.
 }
 
-// get busca da entrada mais recente para a mais antiga (não da primeira
-// para a última), para que, em rotas aninhadas via Mount/Route que
-// reutilizem a mesma chave (o caso mais comum: "*" usado tanto pelo
-// mecanismo interno de mount quanto por um catch-all do usuário), o valor
-// do escopo mais interno (mais recente) sempre prevaleça sobre um valor
-// de um nível de mount mais externo já resolvido.
+// get searches from the most recent entry to the oldest (not from the
+// first to the last), so that in routes nested via Mount/Route that
+// reuse the same key (the most common case: "*" used both by the
+// internal mount mechanism and by a user catch-all), the value from the
+// innermost scope (most recent) always takes precedence over a value
+// from an already-resolved, more outer mount level.
 func (p *routeParams) get(key string) string {
 	for i := p.n - 1; i >= 0; i-- {
 		if p.keys[i] == key {
@@ -60,54 +60,57 @@ func (p *routeParams) reset() {
 	p.n = 0
 }
 
-// Context é o contexto de roteamento padrão, associado à requisição em
-// andamento. Ele implementa context.Context integralmente (Deadline, Done,
-// Err, Value), delegando ao parent quando o valor não é seu — isso evita o
-// wrapper extra de context.WithValue e permite reuso via sync.Pool.
+// Context is the default routing context, attached to the in-flight
+// request. It fully implements context.Context (Deadline, Done, Err,
+// Value), delegating to the parent when the value isn't its own — this
+// avoids the extra context.WithValue wrapper and allows reuse via
+// sync.Pool.
 type Context struct {
 	parent context.Context
 
-	// RoutePath é um override opcional do path de roteamento, usado
-	// durante a busca na árvore (ex: por Mux ao rotear sub-árvores).
+	// RoutePath is an optional override of the routing path, used
+	// during the tree lookup (e.g. by Mux when routing sub-trees).
 	RoutePath string
 
-	// routeRest guarda, sem nenhuma alocação (é uma slice pura sobre o
-	// path original, não uma string nova), o restante do path — incluindo
-	// a barra inicial — a partir do ponto onde um catch-all casou. Usado
-	// internamente por Mount para montar RoutePath do sub-router sem
-	// pagar o custo de uma concatenação de string por requisição.
+	// routeRest holds, with no allocation (it's a plain slice over the
+	// original path, not a new string), the remainder of the path —
+	// including the leading slash — from the point where a catch-all
+	// matched. Used internally by Mount to build the sub-router's
+	// RoutePath without paying the cost of a string concatenation per
+	// request.
 	routeRest string
 
-	// RouteMethod é um override opcional do método HTTP.
+	// RouteMethod is an optional override of the HTTP method.
 	RouteMethod string
 
-	// RoutePatterns é o histórico de patterns casados ao longo da
-	// hierarquia de sub-routers, para introspecção (ex: nomear spans de
-	// observability com o pattern em vez do path com valores reais).
+	// RoutePatterns is the history of patterns matched across the
+	// sub-router hierarchy, for introspection (e.g. naming observability
+	// spans with the pattern instead of the path with real values).
 	RoutePatterns []string
 
 	params routeParams
 }
 
-// pool reutiliza instâncias de *Context entre requisições.
+// pool reuses *Context instances across requests.
 var ctxPool = sync.Pool{
 	New: func() any { return new(Context) },
 }
 
-// NewRouteContext retorna um novo Context vazio, obtido do pool.
+// NewRouteContext returns a new, empty Context obtained from the pool.
 func NewRouteContext() *Context {
 	return ctxPool.Get().(*Context)
 }
 
-// putRouteContext devolve um Context ao pool após resetá-lo. Só deve ser
-// chamado quando nenhuma referência externa ao Context sobreviver à
-// requisição (nunca guarde um *Context após o handler retornar).
+// putRouteContext returns a Context to the pool after resetting it. It
+// must only be called when no external reference to the Context
+// survives the request (never keep a *Context after the handler
+// returns).
 func putRouteContext(x *Context) {
 	x.Reset()
 	ctxPool.Put(x)
 }
 
-// Reset volta o Context ao seu estado inicial para reuso.
+// Reset returns the Context to its initial state for reuse.
 func (x *Context) Reset() {
 	x.parent = nil
 	x.RoutePath = ""
@@ -117,22 +120,22 @@ func (x *Context) Reset() {
 	x.params.reset()
 }
 
-// RouteContext retorna o *Context de roteamento armazenado em um
-// context.Context de requisição, ou nil se não houver nenhum.
+// RouteContext returns the routing *Context stored in a request's
+// context.Context, or nil if there is none.
 func RouteContext(ctx context.Context) *Context {
 	rc, _ := ctx.Value(RouteCtxKey).(*Context)
 	return rc
 }
 
-// URLParam retorna o valor do parâmetro correspondente do contexto de
-// roteamento da requisição.
+// URLParam returns the value of the matching parameter from the
+// request's routing context.
 func (x *Context) URLParam(key string) string {
 	return x.params.get(key)
 }
 
-// RoutePattern retorna o pattern de roteamento completo casado até o
-// momento da chamada. Deve ser usado após next.ServeHTTP, já que o valor
-// muda ao longo da execução (ver exemplo de instrumentação abaixo).
+// RoutePattern returns the full routing pattern matched up to the point
+// of the call. It should be used after next.ServeHTTP, since the value
+// changes throughout execution (see the instrumentation example below).
 //
 //	func Instrument(next http.Handler) http.Handler {
 //		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,18 +148,19 @@ func (x *Context) RoutePattern() string {
 	if len(x.RoutePatterns) == 0 {
 		return ""
 	}
-	// TODO(tree.go): concatenar patterns compostos quando a árvore
-	// estiver implementada. Por ora retorna o último pattern casado.
+	// TODO(tree.go): concatenate compound patterns once the tree
+	// implements it. For now it returns the last matched pattern.
 	return x.RoutePatterns[len(x.RoutePatterns)-1]
 }
 
-// --- implementação da interface context.Context ---
+// --- context.Context interface implementation ---
 //
-// Ao implementar os quatro métodos manualmente (em vez de usar
-// context.WithValue), evitamos o *valueCtx que a stdlib alocaria a mais
-// por requisição. O único alloc que resta no caminho de anexar este
-// Context a um *http.Request é o próprio r.WithContext (new(Request)),
-// que é o piso teórico sem unsafe — ver discussão no histórico do projeto.
+// By implementing the four methods manually (instead of using
+// context.WithValue), we avoid the extra *valueCtx the stdlib would
+// allocate per request. The only alloc left on the path of attaching
+// this Context to an *http.Request is r.WithContext itself
+// (new(Request)), which is the theoretical floor without unsafe — see
+// the discussion in the project's history.
 
 func (x *Context) Deadline() (time.Time, bool) {
 	return x.parent.Deadline()

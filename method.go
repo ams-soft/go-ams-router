@@ -2,9 +2,9 @@ package router
 
 import "net/http"
 
-// methodTyp identifica um método HTTP como índice de array, permitindo
-// dispatch via handlers[methodTyp] em vez de um lookup em map[string]Handler
-// por requisição.
+// methodTyp identifies an HTTP method as an array index, enabling
+// dispatch via handlers[methodTyp] instead of a map[string]Handler
+// lookup per request.
 type methodTyp int8
 
 const (
@@ -17,12 +17,12 @@ const (
 	mPOST
 	mPUT
 	mTRACE
-	numMethods // sentinela: número total de métodos suportados
+	numMethods // sentinel: total number of supported methods
 )
 
-// methodIndex resolve uma string de método HTTP para seu índice de array.
-// O switch é compilado pelo Go como uma sequência eficiente de comparações,
-// sem alocação e sem o custo de hashing de um map.
+// methodIndex resolves an HTTP method string to its array index. The
+// switch is compiled by Go into an efficient sequence of comparisons,
+// with no allocation and no map hashing cost.
 func methodIndex(method string) (methodTyp, bool) {
 	switch method {
 	case http.MethodConnect:
@@ -48,8 +48,8 @@ func methodIndex(method string) (methodTyp, bool) {
 	}
 }
 
-// methodName é o inverso de methodIndex, usado para montar o header Allow
-// em respostas 405 Method Not Allowed.
+// methodName is the inverse of methodIndex, used to build the Allow
+// header in 405 Method Not Allowed responses.
 func methodName(mt methodTyp) string {
 	switch mt {
 	case mCONNECT:

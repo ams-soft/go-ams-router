@@ -1,10 +1,11 @@
-// Package middleware fornece um conjunto de middlewares padrão net/http
-// (Logger, Recoverer, Timeout, RequestID, etc.) para uso com o router.
+// Package middleware provides a set of standard net/http middlewares
+// (Logger, Recoverer, Timeout, RequestID, etc.) for use with the router.
 //
-// Vive no mesmo módulo do core (não em um repo/módulo separado) porque,
-// na fase atual do projeto, o acoplamento entre as mudanças no core e nos
-// middlewares essenciais é alto o suficiente para que versionamento
-// conjunto seja a escolha certa. Ver discussão sobre single-module vs
-// multi-module no histórico do projeto — migrar para módulo separado no
-// futuro é uma extração viável, não uma decisão definitiva.
+// It lives in the same module as the core (not in a separate repo/module)
+// because, at the project's current phase, the coupling between changes
+// to the core and to the essential middlewares is high enough that
+// versioning them together is the right choice. See the discussion on
+// single-module vs multi-module in the project's history — migrating to
+// a separate module in the future is a viable extraction, not a
+// definitive decision.
 package middleware

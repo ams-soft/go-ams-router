@@ -18,7 +18,7 @@ func TestRequestIDGeneratesWhenAbsent(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	if gotID == "" {
-		t.Fatal("esperava um request ID gerado, veio vazio")
+		t.Fatal("expected a generated request ID, got empty")
 	}
 	if rec.Header().Get(RequestIDHeader) != gotID {
 		t.Fatalf("header %s = %q, want %q", RequestIDHeader, rec.Header().Get(RequestIDHeader), gotID)
@@ -50,7 +50,7 @@ func TestRecovererCatchesPanic(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	// Não deve propagar o panic para o teste.
+	// Should not propagate the panic to the test.
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
@@ -70,7 +70,7 @@ func TestTimeoutSignalsDone(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	if ctxErrAfterWait == nil {
-		t.Fatal("esperava ctx.Err() != nil após o timeout")
+		t.Fatal("expected ctx.Err() != nil after the timeout")
 	}
 }
 

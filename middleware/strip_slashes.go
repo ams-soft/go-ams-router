@@ -6,17 +6,18 @@ import (
 	"strings"
 )
 
-// StripSlashes remove uma barra final do path antes do roteamento,
-// fazendo "/foo" e "/foo/" serem tratados como a mesma rota. Deve ser
-// registrado com Use() no Mux raiz — o router, por padrão, distingue
-// "/foo" de "/foo/" estritamente (só casam ambos se ambos os patterns
-// forem registrados explicitamente), e este middleware existe
-// justamente para quem prefere o comportamento tolerante.
+// StripSlashes removes a trailing slash from the path before routing,
+// making "/foo" and "/foo/" be treated as the same route. It must be
+// registered with Use() on the root Mux — the router, by default,
+// strictly distinguishes "/foo" from "/foo/" (both only match if both
+// patterns are registered explicitly), and this middleware exists
+// precisely for those who prefer the tolerant behavior.
 //
-// Registrar com Use() num Router "inline" (retornado por With/Group) não
-// tem efeito sobre o roteamento em si, porque esse middleware precisa
-// rodar ANTES da árvore decidir qual rota casar — e middleware inline só
-// roda DEPOIS que a rota já foi encontrada. Use sempre no Mux raiz.
+// Registering with Use() on an "inline" Router (returned by With/Group)
+// has no effect on the routing itself, because this middleware needs to
+// run BEFORE the tree decides which route matches — and inline
+// middleware only runs AFTER the route has already been found. Always
+// use it on the root Mux.
 func StripSlashes(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := r.URL.Path; len(p) > 1 && p[len(p)-1] == '/' {
@@ -26,10 +27,10 @@ func StripSlashes(next http.Handler) http.Handler {
 	})
 }
 
-// RedirectSlashes responde com 301 removendo a barra final de um path,
-// em vez de rotear silenciosamente como StripSlashes faz — útil quando
-// se quer uma URL canônica única (bom para SEO e para evitar conteúdo
-// duplicado sob duas URLs diferentes).
+// RedirectSlashes responds with 301, removing a path's trailing slash,
+// instead of routing silently the way StripSlashes does — useful when
+// you want a single canonical URL (good for SEO and to avoid duplicate
+// content under two different URLs).
 func RedirectSlashes(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := r.URL.Path; len(p) > 1 && p[len(p)-1] == '/' {
@@ -44,9 +45,9 @@ func RedirectSlashes(next http.Handler) http.Handler {
 	})
 }
 
-// cloneWithPath faz uma cópia rasa da requisição com um path diferente,
-// sem mutar r.URL original (que pode ser compartilhado por outros
-// middlewares já executados antes deste na cadeia).
+// cloneWithPath makes a shallow copy of the request with a different
+// path, without mutating the original r.URL (which may be shared by
+// other middlewares already executed earlier in the chain).
 func cloneWithPath(r *http.Request, path string) *http.Request {
 	r2 := new(http.Request)
 	*r2 = *r
