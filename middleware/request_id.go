@@ -2,9 +2,8 @@ package middleware
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
+	"uuid"
 )
 
 type requestIDKey struct{}
@@ -39,15 +38,7 @@ func GetRequestID(ctx context.Context) string {
 	return id
 }
 
-// newRequestID generates a random 16-byte identifier, in hex (32
-// characters). Uses only crypto/rand from the stdlib — no dependency on
-// an external UUID package.
+// newRequestID generates a random UUID v7 identifier, in string format. Uses the uuid package for generation.
 func newRequestID() string {
-	var b [16]byte
-	// An error from crypto/rand.Read is practically impossible under
-	// normal conditions (OS entropy source unavailable); in this
-	// extremely rare case, we prefer to proceed with zeros rather than
-	// drop the request.
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
+	return uuid.NewV7().String()
 }
